@@ -1,0 +1,6 @@
+#ifndef FOLLY_REDIS_LIBRARY_H
+#define FOLLY_REDIS_LIBRARY_H
+
+void hello();
+
+#endif //FOLLY_REDIS_LIBRARY_H

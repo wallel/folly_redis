@@ -23,6 +23,14 @@ namespace redis
             CLUSTER     =2, //集群redis=>
             SUBSCRIBER  =4, //订阅链接
         };
+    private:
+        struct WaitingCommand
+        {
+            std::vector<CommandVal> cmds;
+            folly::Promise<Reply> reply;
+            bool ignore{ false };
+            bool pipeline{ false };
+        };
     public:
         using ConnectCallback = std::function<folly::SemiFuture<folly::Unit>(Conn& )>;
         using ReplyCallback = std::function < void(Reply&& ) > ;
@@ -52,6 +60,7 @@ namespace redis
             reply_cb_ = std::move( cb );
         }
         const folly::SocketAddress& Addr()const { return addr_; }
+        folly::Executor::KeepAlive<folly::EventBase> GetEventBase()const{return eventBase_;}
     public:
         folly::SemiFuture<Reply> Query(Command cmd);
         void Run(Command cmd);
@@ -69,22 +78,21 @@ namespace redis
 
         void reconnect();
         folly::SemiFuture<Reply> queryInternal(Command cmd, bool append = true);
+        void run(WaitingCommand&& cmd,bool append=true);
         void OnReply(Reply&& rpl);
+        bool hasRedirectError(WaitingCommand& cmd);
+        bool hasMovedError(WaitingCommand& cmd);
+        void redirect(WaitingCommand&& cmd);
+        void setReply(WaitingCommand& cmd);
     private:
         ReplyCallback reply_cb_;
 
         /***********************reply****************************************/
         folly::IOBufQueue buf_{ folly::IOBufQueue::cacheChainLength() };
         ReplyBuilder builder_{buf_};
-        struct WaittingCommand
-        {
-            std::vector<CommandVal> cmds;
-            folly::Promise<Reply> reply;
-            bool ignore{ false };
-            bool pipeline{ false };
-        };
+
         std::mutex                                  cmds_mtx_;
-        std::deque<WaittingCommand>                 cmds_;  // 等待中的命令列表
+        std::deque<WaitingCommand>                 cmds_;  // 等待中的命令列表
         /***********************connect info********************************/
         folly::SocketAddress addr_;
         std::string pass_;

@@ -2,7 +2,7 @@
 #include <memory>
 #include <folly/hash/Hash.h>
 #include <folly/Random.h>
-
+#include "redis/util.h"
 namespace redis
 {
     namespace 
@@ -133,9 +133,26 @@ namespace redis
         shareds_.emplace(std::make_pair(Slot{ 0,SHARDS }, Node{ host,port,false }));
         pass_ = pass;
         timeout_ms_ = timeout_ms;
-        return conn->Connect(host, port,std::move(pass),0, timeout_ms);
+        return conn->Connect(host, port,std::move(pass),0, timeout_ms).deferValue([shared=shared_from_this()](folly::Unit&&){
+            return shared->Update();
+        });
     }
-
+    folly::SemiFuture<folly::Unit> ClusterConns::Update()
+    {
+        auto it = util::RandOne(conns_);
+        if (it == conns_.end())return folly::makeSemiFuture<folly::Unit>(std::runtime_error("there is no valid conn in cluster"));
+        return it->second->Query(std::move(Command::Create(false).Cmd("CLUSTER")
+                .Arg("SLOTS")
+                .Build()))
+                .deferValue([](Reply&& rpl)
+                           {
+                               return ClusterConns::ParseSlots(std::move(rpl));
+                           })
+                .deferValue([share = shared_from_this()](ClusterConns::Shards&& shards)
+                           {
+                               return share->UpdateShards(std::move(shards));
+                           });
+    }
     void ClusterConns::Close()
     {
         //所有连接关闭
@@ -201,7 +218,7 @@ namespace redis
         }
         for (auto& s : shareds_)
         {
-            news.insert(s.second);
+            olds.insert(s.second);
         }
         std::set_difference(olds.begin(),olds.end(), news.begin(),news.end(), std::inserter(removes,removes.end()));
         std::set_difference(news.begin(), news.end(), olds.begin(), olds.end(), std::inserter(adds, adds.end()));
@@ -250,28 +267,11 @@ namespace redis
         return conn_iter->second;
     }
 
-    //更新槽位节点信息
-    folly::SemiFuture<folly::Unit> ClusterClient::Update()
-    {
-        return Cmd("CLUSTER")
-        .Arg("SLOTS")
-        .Query()
-        .thenValue([](Reply&& rpl)
-        {
-            return ClusterConns::ParseSlots(std::move(rpl));
-        })
-        .thenValue([share = shared()](ClusterConns::Shards&& shards)
-        {
-            return share->conn_->UpdateShards(std::move(shards));
-        });
-    }
+
     folly::Future<folly::Unit> ClusterClient::Connect(const std::string& host, int port, const std::string& pass,int dbindex,
         int32_t timeout_ms)
     {
-        return conn_->Connect(host, port, pass,timeout_ms).deferValue([shared=shared()](folly::Unit&&)
-        {
-            return shared->Update();
-        }).via(exec_);
+        return conn_->Connect(host, port, pass,timeout_ms).via(exec_);
     }
 
     void ClusterClient::Close()
@@ -292,7 +292,8 @@ namespace redis
                 folly::throw_exception(std::invalid_argument("pipeline commands in redis cluster must have same hash tag"));
             }
         }
-        return _slot;
+
+        return (_slot < 0) ? folly::Random::rand32(0, SHARDS+1) : _slot;
     }
 
     folly::Future<Reply> ClusterClient::Query(Command cmd)

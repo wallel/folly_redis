@@ -3,12 +3,15 @@
 #include <stdexcept>
 
 #include <folly/Conv.h>
+#include <folly/String.h>
 #include <folly/io/Cursor.h>
 
+#include "redis/util.h"
 namespace redis{
     bool SimpleStringBuilder::Check()
     {
         if ( ready_ )return true;
+        if(buf_.empty())return false;
         folly::io::Cursor cur(buf_.front());
         auto idx = -1;
         for(auto i=0; i < buf_.chainLength();i++){
@@ -34,7 +37,14 @@ namespace redis{
         if ( ssbuilder_.IsReady() )
         {
             ready_ = ssbuilder_.IsReady();
-            rpl_.set( ssbuilder_.Build().AsString(), Reply::StringType::Error );
+            auto str =ssbuilder_.Build().AsString();
+            auto type = Reply::StringType::Error;
+             if(util::StartsWith(str,"ASK")){
+                type =Reply::StringType::AskError;
+             }else if(util::StartsWith(str,"MOVED")){
+                 type =Reply::StringType::MovedError;
+             }
+            rpl_.set(std::move(str), type );
             return true;
         }
         return false;
@@ -82,6 +92,7 @@ namespace redis{
 
     bool IntBuilder::Check() {
         if ( ready_ )return true;
+        if(buf_.empty())return false;
         folly::io::Cursor cur(buf_.front());
         auto idx = -1;
         for(auto i=0; i < buf_.chainLength();i++){
@@ -106,6 +117,7 @@ namespace redis{
     {
         do
         {
+            if(buf_.empty())break;
             if ( ready_ )break;
             if ( !fetchSize() )break;
             while (!ready_ )
@@ -132,6 +144,7 @@ namespace redis{
 
     bool ArrayBuilder::fetchField()
     {
+        if(buf_.empty())return false;
         if ( !curbuilder_ ) {
             auto id =*buf_.front()->data();
             curbuilder_ = CreateBuilder( id,buf_ );

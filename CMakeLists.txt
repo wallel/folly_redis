@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
-#默认debug
+#default debug
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
@@ -32,6 +32,7 @@ add_library(folly_redis
         redis/reply.h
         redis/reply.cpp
         redis/redis_export.h
+        redis/util.h
         )
 target_include_directories(folly_redis PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(folly_redis PUBLIC Folly::folly)

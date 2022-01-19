@@ -20,12 +20,16 @@ namespace redis
             Null = 3,
             Integer = 4,
             Array = 5,
+            AskError=6,
+            MovedError=7,
         };
         enum class StringType
         {
             Error = 0,
             BulkString = 1,
             SimpleString = 2,
+            AskError=6,
+            MovedError=7,
         };
     public:
         Reply() : type_{ Type::Null } {};
@@ -48,6 +52,12 @@ namespace redis
         bool IsError()const {
             return type_ == Type::Error;
         }
+        bool IsMovedError() const {
+            return type_ ==Type::MovedError;
+        }
+        bool IsAskError() const {
+            return type_ == Type::AskError;
+        }
         bool IsNull()const {
             return type_ == Type::Null;
         }
@@ -55,7 +65,7 @@ namespace redis
             return type_ == Type::BulkString;
         }
         bool IsString()const {
-            return IsBulkString() || IsSimpleString() || IsError();
+            return IsBulkString() || IsSimpleString() || IsError() || IsMovedError() || IsAskError();
         }
         bool IsInteger()const {
             return type_ == Type::Integer;

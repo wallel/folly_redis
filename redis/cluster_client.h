@@ -67,6 +67,8 @@ namespace redis
         folly::SemiFuture<folly::Unit> Connect(const std::string& host, int port,std::string pass="", int32_t timeout_ms = 0);
         // 关闭所有连接
         void Close();
+        //更新整个集群信息
+        folly::SemiFuture<folly::Unit> Update();
     public:
         folly::SemiFuture<Reply> Query(int32_t slot,Command cmd);
         void Run(int32_t slot,Command cmd);
@@ -87,6 +89,11 @@ namespace redis
         }
         static Shards ParseSlots(Reply&& rpl);
         folly::SemiFuture<folly::Unit> UpdateShards(Shards&& shards);
+        std::shared_ptr<Conn> GetConn(const Node& node) const{
+            auto it = conns_.find(node);
+            if(it == conns_.end())return nullptr;
+            return it->second;
+        }
     private:
         std::shared_ptr<Conn> GetConn(int32_t slot);
     private:
@@ -122,16 +129,10 @@ namespace redis
         {
             return shared();
         }
-        Command Pipeline()override
-        {
-            folly::throw_exception(std::runtime_error("redis cluster now can't use pipeline"));
-        }
     protected:
         folly::Future<Reply> Query(Command cmd)override;
         void Run(Command cmd)override;
-    private:
-        //更新整个集群信息
-        folly::SemiFuture<folly::Unit> Update();
+
     private:
         std::shared_ptr<ClusterConns>  conn_;
     };
